@@ -13,6 +13,7 @@ function ProductGrid({ category }) {
     async function loadData() {
       try {
         const data = await getProducts()
+
         if (isMounted && Array.isArray(data)) {
           setProducts(data)
         }
@@ -39,22 +40,24 @@ function ProductGrid({ category }) {
     }
   }, [category])
 
-  const categoryProducts = Array.isArray(products)
-    ? products.filter((product) => {
-        const productCategories = Array.isArray(product.categories)
-          ? product.categories
-          : [product.category]
+  const categoryProducts = products.filter((product) => {
+    const productCategories = Array.isArray(product.categories)
+      ? product.categories
+      : [product.category].filter(Boolean)
 
-        // Comprobación flexible asegurando coincidencia de categoría
-        return productCategories.some(
-          (cat) => cat && cat.toLowerCase() === category.toLowerCase()
-        )
-      })
-    : []
+    return productCategories.includes(category)
+  })
 
   if (loading) {
     return (
-      <main className="catalog-page" style={{ textAlign: 'center', padding: '80px', color: '#fff' }}>
+      <main
+        className="catalog-page"
+        style={{
+          textAlign: 'center',
+          padding: '80px',
+          color: '#fff',
+        }}
+      >
         <p>Cargando colección Imperium...</p>
       </main>
     )
@@ -91,7 +94,7 @@ function ProductGrid({ category }) {
                   <p>
                     {(Array.isArray(product.categories)
                       ? product.categories
-                      : [product.category]
+                      : [product.category].filter(Boolean)
                     ).join(' · ')}
                   </p>
 
