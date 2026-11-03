@@ -36,12 +36,14 @@ const EDITOR_FORMATS = [
   'align',
   'link',
 ]
-function getProductCategories(product) {
-  const categories = Array.isArray(product.categories)
-    ? product.categories
-    : [product.category].filter(Boolean)
 
-  return [...new Set(categories.filter((category) => CATEGORIES.includes(category)))]
+function getProductCategories(product) {
+  // MODIFICACIÓN FUNCIONAL: Prioriza el arreglo 'categories', y si no existe, convierte 'category' en arreglo
+  const rawCategories = Array.isArray(product.categories) && product.categories.length > 0
+    ? product.categories
+    : (product.category ? [product.category] : [])
+
+  return [...new Set(rawCategories.filter((category) => CATEGORIES.includes(category)))]
 }
 
 function cleanDescription(value) {
