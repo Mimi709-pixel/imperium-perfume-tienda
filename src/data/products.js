@@ -1,3 +1,4 @@
+
 import { supabase } from '../services/supabase'
 
 const CONFIG_KEY = 'imperium-store-config'
@@ -82,78 +83,165 @@ const defaultConfig = {
   ],
 }
 
-// Inicializamos con los productos locales para que nunca esté vacío al arrancar
+// Productos iniciales de respaldo
 let cachedProducts = [...initialProducts]
 
-// Función síncrona/asíncrona unificada para obtener productos sin romper componentes
+// Obtener productos desde Supabase
 export async function getProducts() {
   try {
-    const { data, error } = await supabase.from('products').select('*')
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+
     if (error) throw error
+
     if (data && data.length > 0) {
-      cachedProducts = data.map(p => ({
+      cachedProducts = data.map((p) => ({
         ...p,
         id: String(p.id),
-        originalPrice: p.original_price || p.originalPrice || 0,
-        promoBadge: p.promo_badge || p.promoBadge || '',
-        categories: p.categories || [p.category]
+        originalPrice: p.original_price ?? p.originalPrice ?? 0,
+        promoBadge: p.promo_badge ?? p.promoBadge ?? '',
+        categories: Array.isArray(p.categories)
+          ? p.categories
+          : (p.category ? [p.category] : []),
       }))
+
       return cachedProducts
     }
+
+    return cachedProducts
   } catch (error) {
     console.error('Error al sincronizar con Supabase:', error)
+    return cachedProducts
   }
-  return cachedProducts
 }
 
+// Guardar y actualizar productos
 export async function saveProducts(productsList) {
   try {
-    if (Array.isArray(productsList)) {
-      cachedProducts = productsList
-      for (const prod of productsList) {
-        await supabase.from('products').upsert({
-          id: String(prod.id),
-          name: prod.name,
-          category: prod.category,
-          price: prod.price,
-          stock: prod.stock,
-          image: prod.image,
-          description: prod.description || ''
-        })
-      }
-      window.dispatchEvent(new Event('imperium-products-updated'))
-      return true
+    if (!Array.isArray(productsList) || productsList.length === 0) {
+      console.error('Guardado cancelado: la lista está vacía.')
+      return false
     }
-    return false
+
+    const { data: existingProducts, error: fetchError } = await supabase
+      .from('products')
+      .select('id')
+
+    if (fetchError) throw fetchError
+
+    const productsToSave = productsList.map((prod) => {
+      const categories = Array.isArray(prod.categories)
+        ? prod.categories
+        : (prod.category ? [prod.category] : [])
+
+      return {
+        id: String(prod.id),
+        name: prod.name,
+        category: categories[0] || prod.category || '',
+        categories,
+        price: Number(prod.price) || 0,
+        stock: Number(prod.stock) || 0,
+        image: prod.image || null,
+        description: prod.description || '',
+      }
+    })
+
+    const { error: upsertError } = await supabase
+      .from('products')
+      .upsert(productsToSave)
+
+    if (upsertError) throw upsertError
+
+    // Solo permite eliminar un producto por operación.
+    // Así evitamos borrar muchos productos si llega una lista incompleta.
+    const incomingIds = new Set(productsToSave.map((prod) => prod.id))
+    const idsToDelete = (existingProducts || [])
+      .filter((prod) => !incomingIds.has(String(prod.id)))
+      .map((prod) => prod.id)
+
+    if (idsToDelete.length > 1) {
+      throw new Error('Se detectaron varias eliminaciones. Operación cancelada por seguridad.')
+    }
+
+    if (idsToDelete.length === 1) {
+      const { error: deleteError } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', idsToDelete[0])
+
+      if (deleteError) throw deleteError
+    }
+
+    cachedProducts = productsList
+
+    window.dispatchEvent(new Event('imperium-products-updated'))
+
+    return true
   } catch (error) {
     console.error('Error al guardar en Supabase:', error)
     return false
   }
 }
 
+// Obtener configuración de la tienda
 export function getStoreConfig() {
-  const saved = localStorage.getItem(CONFIG_KEY)
-  if (!saved) return defaultConfig
-
   try {
+    const saved = localStorage.getItem(CONFIG_KEY)
+
+    if (!saved) return defaultConfig
+
     const parsed = JSON.parse(saved)
+
     return {
       ...defaultConfig,
       ...parsed,
-      zones: Array.isArray(parsed.zones) ? parsed.zones : defaultConfig.zones,
-      coupons: Array.isArray(parsed.coupons) ? parsed.coupons : defaultConfig.coupons,
+      zones: Array.isArray(parsed.zones)
+        ? parsed.zones
+        : defaultConfig.zones,
+      coupons: Array.isArray(parsed.coupons)
+        ? parsed.coupons
+        : defaultConfig.coupons,
     }
   } catch (error) {
+    console.error('Error al cargar la configuración:', error)
     return defaultConfig
   }
 }
 
+// Guardar configuración de la tienda
 export function saveStoreConfig(config) {
   try {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
     window.dispatchEvent(new Event('imperium-config-updated'))
     return true
   } catch (error) {
+    console.error('Error al guardar la configuración:', error)
     return false
+  }
+}
+
+// Escuchar cambios de productos en tiempo real desde Supabase
+export function subscribeToProducts(callback) {
+  const channel = supabase
+    .channel('imperium-products-realtime')
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'products',
+      },
+      async () => {
+        const products = await getProducts()
+        callback(products)
+      }
+    )
+    .subscribe((status) => {
+      console.log('Estado de sincronización Imperium:', status)
+    })
+
+  return () => {
+    supabase.removeChannel(channel)
   }
 }

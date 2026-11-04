@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getProducts } from '../data/products'
+import { getProducts, subscribeToProducts } from '../data/products'
 import './Products.css'
 
 function Products() {
@@ -9,36 +9,47 @@ function Products() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let isMounted = true
+  let isMounted = true
 
-    async function loadData() {
-      try {
-        const data = await getProducts()
-        if (isMounted && Array.isArray(data)) {
-          setProducts(data)
-        }
-      } catch (error) {
-        console.error('Error cargando productos destacados:', error)
-      } finally {
-        if (isMounted) setLoading(false)
+  async function loadData() {
+    try {
+      const data = await getProducts()
+
+      if (isMounted && Array.isArray(data)) {
+        setProducts(data)
       }
+    } catch (error) {
+      console.error('Error cargando productos destacados:', error)
+    } finally {
+      if (isMounted) setLoading(false)
     }
+  }
 
+  loadData()
+
+  // Escuchar cambios directamente desde Supabase
+  const unsubscribe = subscribeToProducts((data) => {
+    if (isMounted && Array.isArray(data)) {
+      setProducts(data)
+    }
+  })
+
+  // Mantener la compatibilidad con los eventos locales
+  function updateProducts() {
     loadData()
+  }
 
-    function updateProducts() {
-      loadData()
-    }
+  window.addEventListener('imperium-products-updated', updateProducts)
+  window.addEventListener('storage', updateProducts)
 
-    window.addEventListener('imperium-products-updated', updateProducts)
-    window.addEventListener('storage', updateProducts)
+  return () => {
+    isMounted = false
+    unsubscribe()
 
-    return () => {
-      isMounted = false
-      window.removeEventListener('imperium-products-updated', updateProducts)
-      window.removeEventListener('storage', updateProducts)
-    }
-  }, [])
+    window.removeEventListener('imperium-products-updated', updateProducts)
+    window.removeEventListener('storage', updateProducts)
+  }
+}, [])
 
   // Si hay productos con featured true los muestra, sino toma los primeros para asegurar que la sección no quede vacía
   const featuredProducts = Array.isArray(products) && products.length > 0

@@ -216,24 +216,31 @@ function Admin() {
   }
 
   async function updateProducts(updatedProducts, successMessage) {
-    try {
-      await saveProducts(updatedProducts)
-      setProducts(updatedProducts)
-      setMessage(successMessage)
-      return true
-    } catch (error) {
-      console.error('Error al guardar los productos:', error)
-      setMessage('No se pudieron guardar los cambios.')
+  try {
+    const saved = await saveProducts(updatedProducts)
+
+    if (!saved) {
+      setMessage('No se pudieron guardar los cambios. Intenta nuevamente.')
       return false
     }
-  }
 
+    setProducts(updatedProducts)
+    setMessage(successMessage)
+    return true
+  } catch (error) {
+    console.error('Error al guardar los productos:', error)
+    setMessage('No se pudieron guardar los cambios.')
+    return false
+  }
+}
   async function handleSubmit(event) {
     event.preventDefault()
     const price = Number(form.price)
     const originalPrice = form.originalPrice ? Number(form.originalPrice) : 0
     const stock = Number(form.stock)
     const categories = [...new Set(form.categories)]
+    console.log('Categorías seleccionadas:', form.categories)
+console.log('Categorías que se van a guardar:', categories)
 
     if (categories.length === 0) {
       setMessage('Debes seleccionar al menos una categoría.')

@@ -79,23 +79,38 @@
 
 
 /* ================================
+
    BARRA DE NAVEGACIÓN
+
 ================================ */
 
+
+
 .navigation-bar {
+
   width: 100%;
+
   max-width: 1500px;
+
   height: 62px;
+
   margin: 0 auto;
+
   padding: 0 50px;
 
+
+
   display: flex;
+
   align-items: center;
+
   justify-content: center;
 
-  position: relative;
-}
 
+
+  position: relative;
+
+} 
 
 /* ================================
    MENÚ
@@ -567,4 +582,29 @@
 
 .search-panel {
   position: relative;
+}
+
+/* Corrección exclusiva para evitar el bug de pantalla negra en el buscador móvil */
+input[type="search"], 
+input[type="text"] {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-overlay, 
+.search-container {
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* Forzar color blanco o neutro en títulos y precios para evitar el azul móvil por defecto */
+.product-title, .product-item h3, .product-price, a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Si deseas un color fijo elegante para precios o títulos secundarios */
+p, span, h3 {
+  color: #ffffff;
 }

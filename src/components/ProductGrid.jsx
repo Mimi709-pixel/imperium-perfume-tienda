@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { getProducts } from '../data/products'
+import { getProducts, subscribeToProducts } from '../data/products'
 import './ProductGrid.css'
 
 function ProductGrid({ category }) {
@@ -8,37 +8,46 @@ function ProductGrid({ category }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    let isMounted = true
+  let isMounted = true
 
-    async function loadData() {
-      try {
-        const data = await getProducts()
+  async function loadData() {
+    try {
+      const data = await getProducts()
 
-        if (isMounted && Array.isArray(data)) {
-          setProducts(data)
-        }
-      } catch (error) {
-        console.error('Error al cargar productos en la categoría:', error)
-      } finally {
-        if (isMounted) setLoading(false)
+      if (isMounted && Array.isArray(data)) {
+        setProducts(data)
       }
+    } catch (error) {
+      console.error('Error al cargar productos en la categoría:', error)
+    } finally {
+      if (isMounted) setLoading(false)
     }
+  }
 
+  loadData()
+
+  // Escuchar cambios de productos en Supabase
+  const unsubscribe = subscribeToProducts((data) => {
+    if (isMounted && Array.isArray(data)) {
+      setProducts(data)
+    }
+  })
+
+  function updateProducts() {
     loadData()
+  }
 
-    function updateProducts() {
-      loadData()
-    }
+  window.addEventListener('imperium-products-updated', updateProducts)
+  window.addEventListener('storage', updateProducts)
 
-    window.addEventListener('imperium-products-updated', updateProducts)
-    window.addEventListener('storage', updateProducts)
+  return () => {
+    isMounted = false
+    unsubscribe()
 
-    return () => {
-      isMounted = false
-      window.removeEventListener('imperium-products-updated', updateProducts)
-      window.removeEventListener('storage', updateProducts)
-    }
-  }, [category])
+    window.removeEventListener('imperium-products-updated', updateProducts)
+    window.removeEventListener('storage', updateProducts)
+  }
+}, [category])
 
   const categoryProducts = products.filter((product) => {
     const productCategories = Array.isArray(product.categories)
