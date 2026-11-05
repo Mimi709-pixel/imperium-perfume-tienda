@@ -8,7 +8,8 @@ function Header() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [products, setProducts] = useState(() => getProducts())
+  // CORRECCIÓN: Inicializamos de forma segura como arreglo vacío para evitar fallos de render en móvil
+  const [products, setProducts] = useState([])
 
   const { items } = useCarrito()
   const navigate = useNavigate()
@@ -19,8 +20,21 @@ function Header() {
   )
 
   useEffect(() => {
+    // CARGA SEGURA: Obtenemos los productos al montar el componente de manera asíncrona/segura
+    try {
+      const initialProducts = getProducts()
+      if (Array.isArray(initialProducts)) {
+        setProducts(initialProducts)
+      }
+    } catch (e) {
+      console.error('Error cargando productos en Header:', e)
+    }
+
     function updateProducts() {
-      setProducts(getProducts())
+      const data = getProducts()
+      if (Array.isArray(data)) {
+        setProducts(data)
+      }
     }
 
     window.addEventListener('imperium-products-updated', updateProducts)
@@ -34,7 +48,7 @@ function Header() {
 
   const term = searchTerm.trim().toLowerCase()
 
-  const searchResults = term
+  const searchResults = term && Array.isArray(products)
     ? products
         .filter((product) =>
           (product.name || '').toLowerCase().includes(term) ||
@@ -103,7 +117,7 @@ function Header() {
       )}
 
       {searchOpen && (
-        <div className="search-panel">
+        <div className="search-panel" style={{ transform: 'translateZ(0)', WebkitBackfaceVisibility: 'hidden' }}>
           <div className="search-panel-content">
             <input
               type="text"
@@ -112,6 +126,7 @@ function Header() {
               autoFocus
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
+              style={{ WebkitAppearance: 'none', appearance: 'none' }}
             />
 
             <button
