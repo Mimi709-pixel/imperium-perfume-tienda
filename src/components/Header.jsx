@@ -8,7 +8,6 @@ function Header() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  // CORRECCIÓN: Inicializamos de forma segura como arreglo vacío para evitar fallos de render en móvil
   const [products, setProducts] = useState([])
 
   const { items } = useCarrito()
@@ -20,21 +19,21 @@ function Header() {
   )
 
   useEffect(() => {
-    // CARGA SEGURA: Obtenemos los productos al montar el componente de manera asíncrona/segura
-    try {
-      const initialProducts = getProducts()
-      if (Array.isArray(initialProducts)) {
-        setProducts(initialProducts)
+    async function loadHeaderProducts() {
+      try {
+        const data = await getProducts()
+        if (Array.isArray(data)) {
+          setProducts(data)
+        }
+      } catch (error) {
+        console.error('Error cargando productos en Header:', error)
       }
-    } catch (e) {
-      console.error('Error cargando productos en Header:', e)
     }
 
+    loadHeaderProducts()
+
     function updateProducts() {
-      const data = getProducts()
-      if (Array.isArray(data)) {
-        setProducts(data)
-      }
+      loadHeaderProducts()
     }
 
     window.addEventListener('imperium-products-updated', updateProducts)
