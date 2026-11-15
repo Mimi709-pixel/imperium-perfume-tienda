@@ -1,26 +1,28 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getStoreConfig } from '../data/products'
+import { iniciarSesionAdmin } from '../services/adminAuth'
 import './LoginAdmin.css'
 
 function LoginAdmin() {
   const [usuario, setUsuario] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [cargando, setCargando] = useState(false)
   const navigate = useNavigate()
 
-  function handleLogin(e) {
+  async function handleLogin(e) {
     e.preventDefault()
-    const config = getStoreConfig()
-    const credenciales = config.adminCredentials || { usuario: 'imperiumadmin', password: 'Imperium2026*' }
+    setCargando(true)
+    setError('')
 
-    if (usuario === credenciales.usuario && password === credenciales.password) {
-      // Guardar sesión activa en sessionStorage
-      sessionStorage.setItem('imperium_admin_authenticated', 'true')
-      setError('')
+    // La sesión la maneja Supabase de forma segura
+    const resultado = await iniciarSesionAdmin(usuario, password)
+    setCargando(false)
+
+    if (resultado.ok) {
       navigate('/admin')
     } else {
-      setError('Credenciales incorrectas. Acceso exclusivo para administradores.')
+      setError(resultado.mensaje)
     }
   }
 
@@ -34,12 +36,13 @@ function LoginAdmin() {
 
         <form onSubmit={handleLogin} className="login-form">
           <label className="login-campo">
-            Usuario
+            Correo del administrador
             <input
-              type="text"
+              type="email"
+              autoComplete="username"
               value={usuario}
               onChange={(e) => setUsuario(e.target.value)}
-              placeholder="Ingresa tu usuario"
+              placeholder="admin@correo.com"
               required
             />
           </label>
@@ -48,6 +51,7 @@ function LoginAdmin() {
             Contraseña
             <input
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••••••"
@@ -57,8 +61,8 @@ function LoginAdmin() {
 
           {error && <div className="login-error">{error}</div>}
 
-          <button type="submit" className="login-boton">
-            Ingresar al Panel
+          <button type="submit" className="login-boton" disabled={cargando}>
+            {cargando ? 'Verificando...' : 'Ingresar al Panel'}
           </button>
         </form>
       </div>
@@ -66,4 +70,4 @@ function LoginAdmin() {
   )
 }
 
-export default LoginAdmin
+export default LoginAdmin

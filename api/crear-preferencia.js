@@ -1,4 +1,8 @@
-import { MercadoPagoConfig, Preference } from 'mercadopago'
+// Endpoint de pago para Vercel.
+// La lógica está en server/crearPreferencia.js y es la misma que usa Cloudflare Pages.
+// El token de Mercado Pago ya no va en el código: se configura como variable de entorno MP_ACCESS_TOKEN.
+
+import { crearPreferencia } from '../server/crearPreferencia.js'
 
 export default async function handler(req, res) {
   // Solo se permiten peticiones POST
@@ -6,27 +10,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Método no permitido' })
   }
 
-  // Configuración con el Access Token real entregado por el cliente
-  const client = new MercadoPagoConfig({
-    accessToken: 'APP_USR-4531200994384887-060423-2dbd3ad5ea58fd64eccf6817b75a7838-1677555801',
+  const protocolo = req.headers['x-forwarded-proto'] || 'https'
+  const origin = req.headers.origin || `${protocolo}://${req.headers.host}`
+
+  const { status, json } = await crearPreferencia({
+    body: req.body,
+    origin,
+    env: process.env,
   })
 
-  try {
-    const preference = new Preference(client)
-
-    const response = await preference.create({
-      body: {
-        items: req.body.items,
-        payer: req.body.payer,
-        back_urls: req.body.back_urls,
-        auto_return: 'approved',
-      },
-    })
-
-    // Retorna el link oficial de pago generado por Mercado Pago
-    return res.status(200).json({ id: response.id, init_point: response.init_point })
-  } catch (error) {
-    console.error('Error al procesar con Mercado Pago:', error)
-    return res.status(500).json({ error: error.message || 'Error al crear la preferencia de pago' })
-  }
+  return res.status(status).json(json)
 }

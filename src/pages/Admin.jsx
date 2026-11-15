@@ -7,7 +7,10 @@ import {
   saveProducts,
   getStoreConfig,
   saveStoreConfig,
+  loadStoreConfig,
+  uploadProductImage,
 } from '../data/products'
+import { supabase } from '../services/supabase'
 import 'react-quill-new/dist/quill.snow.css'
 import './Admin.css'
 
@@ -60,8 +63,9 @@ function cleanDescription(value) {
 function Admin() {
   const navigate = useNavigate()
 
-  function cerrarSesion() {
+  async function cerrarSesion() {
     sessionStorage.removeItem('imperium_admin_authenticated')
+    await supabase.auth.signOut()
     navigate('/admin/login')
   }
 
@@ -72,6 +76,9 @@ function Admin() {
   const [message, setMessage] = useState('')
   const [configMessage, setConfigMessage] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [subiendoImagen, setSubiendoImagen] = useState(false)
+  const [guardandoConfig, setGuardandoConfig] = useState(false)
+  const [configSeccion, setConfigSeccion] = useState('envios')
 
   const [nuevaZona, setNuevaZona] = useState({ name: '', price: '' })
   const [nuevoCupon, setNuevoCupon] = useState({ code: '', discountType: 'percentage', discountValue: '' })
@@ -95,9 +102,12 @@ function Admin() {
   useEffect(() => {
     async function loadAdminData() {
       try {
-        const data = await getProducts()
+        const [data, configActual] = await Promise.all([getProducts(), loadStoreConfig()])
         if (Array.isArray(data)) {
           setProducts(data)
+        }
+        if (configActual) {
+          setConfig(configActual)
         }
       } catch (error) {
         console.error('Error cargando productos en Admin:', error)
@@ -146,6 +156,20 @@ function Admin() {
     }))
   }
 
+  // Guarda la configuración en Supabase y avisa si algo falla
+  async function guardarConfigRemota(nuevaConfig, mensajeOk, seccion = 'envios') {
+    setConfigSeccion(seccion)
+    setGuardandoConfig(true)
+    const guardado = await saveStoreConfig(nuevaConfig)
+    setGuardandoConfig(false)
+    setConfigMessage(
+      guardado
+        ? mensajeOk
+        : 'No se pudo guardar en la nube. Revisa tu conexión o vuelve a iniciar sesión.'
+    )
+    return guardado
+  }
+
   function agregarZona() {
     if (!nuevaZona.name.trim() || !nuevaZona.price) return
     const priceNum = Number(nuevaZona.price)
@@ -158,7 +182,7 @@ function Admin() {
 
     const nuevaConfig = { ...config, zones: zonasActualizadas }
     setConfig(nuevaConfig)
-    saveStoreConfig(nuevaConfig)
+    guardarConfigRemota(nuevaConfig, 'Sector agregado y publicado en la tienda.')
     setNuevaZona({ name: '', price: '' })
   }
 
@@ -166,7 +190,7 @@ function Admin() {
     const zonasActualizadas = (config.zones || []).filter((_, i) => i !== index)
     const nuevaConfig = { ...config, zones: zonasActualizadas }
     setConfig(nuevaConfig)
-    saveStoreConfig(nuevaConfig)
+    guardarConfigRemota(nuevaConfig, 'Sector eliminado.')
   }
 
   function agregarCupon() {
@@ -186,7 +210,7 @@ function Admin() {
 
     const nuevaConfig = { ...config, coupons: cuponesActualizados }
     setConfig(nuevaConfig)
-    saveStoreConfig(nuevaConfig)
+    guardarConfigRemota(nuevaConfig, 'Cupón creado.', 'cupones')
     setNuevoCupon({ code: '', discountType: 'percentage', discountValue: '' })
   }
 
@@ -194,10 +218,10 @@ function Admin() {
     const cuponesActualizados = (config.coupons || []).filter((_, i) => i !== index)
     const nuevaConfig = { ...config, coupons: cuponesActualizados }
     setConfig(nuevaConfig)
-    saveStoreConfig(nuevaConfig)
+    guardarConfigRemota(nuevaConfig, 'Cupón eliminado.', 'cupones')
   }
 
-  function handleSaveConfig(event) {
+  async function handleSaveConfig(event, seccion = 'envios') {
     event.preventDefault()
     const freeShippingThreshold = Number(config.freeShippingThreshold)
 
@@ -208,11 +232,7 @@ function Admin() {
         : 0,
     }
 
-    if (saveStoreConfig(configData)) {
-      setConfigMessage('Configuración guardada correctamente.')
-    } else {
-      setConfigMessage('Error al guardar la configuración.')
-    }
+    await guardarConfigRemota(configData, 'Configuración guardada y publicada en la tienda.', seccion)
   }
 
   async function updateProducts(updatedProducts, successMessage) {
@@ -293,6 +313,24 @@ console.log('Categorías que se van a guardar:', categories)
     if (await updateProducts(updatedProducts, successMessage)) {
       setForm({ ...emptyForm })
       setEditingId(null)
+    }
+  }
+
+  async function handleImageUpload(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    setSubiendoImagen(true)
+    setMessage('Subiendo imagen...')
+    const resultado = await uploadProductImage(file)
+    setSubiendoImagen(false)
+
+    if (resultado.ok) {
+      setForm((prev) => ({ ...prev, image: resultado.url }))
+      setMessage('Imagen subida. Ahora guarda el producto para publicarla.')
+    } else {
+      setMessage(resultado.mensaje)
     }
   }
 
@@ -462,20 +500,20 @@ console.log('Categorías que se van a guardar:', categories)
           </div>
 
           <div className="admin-form-actions" style={{ marginTop: '20px' }}>
-            <button type="submit">
-              Guardar configuración de envíos
+            <button type="submit" disabled={guardandoConfig}>
+              {guardandoConfig ? 'Guardando...' : 'Guardar configuración de envíos'}
             </button>
           </div>
         </form>
 
-        {configMessage && <p role="status" style={{ color: '#e5c77e', marginTop: '10px' }}>{configMessage}</p>}
+        {configMessage && configSeccion === 'envios' && <p role="status" style={{ color: '#e5c77e', marginTop: '10px' }}>{configMessage}</p>}
       </section>
 
       {/* SECCIÓN 2: BARRA DE ANUNCIOS Y WHATSAPP */}
       <section className="admin-section">
         <h2>Barra de anuncios superior y soporte de WhatsApp</h2>
 
-        <form className="admin-form" onSubmit={handleSaveConfig}>
+        <form className="admin-form" onSubmit={(event) => handleSaveConfig(event, 'anuncios')}>
           <label className="admin-checkbox" style={{ gridColumn: '1 / -1' }}>
             <input
               name="enabled"
@@ -517,9 +555,13 @@ console.log('Categorías que se van a guardar:', categories)
           </label>
 
           <div className="admin-form-actions" style={{ gridColumn: '1 / -1' }}>
-            <button type="submit">Guardar barra y contacto</button>
+            <button type="submit" disabled={guardandoConfig}>
+              {guardandoConfig ? 'Guardando...' : 'Guardar barra y contacto'}
+            </button>
           </div>
         </form>
+
+        {configMessage && configSeccion === 'anuncios' && <p role="status" style={{ color: '#e5c77e', marginTop: '10px' }}>{configMessage}</p>}
       </section>
 
       {/* SECCIÓN 3: CUPONES Y CÓDIGOS DE DESCUENTO */}
@@ -577,6 +619,8 @@ console.log('Categorías que se van a guardar:', categories)
             + Crear cupón
           </button>
         </div>
+
+        {configMessage && configSeccion === 'cupones' && <p role="status" style={{ color: '#e5c77e', marginTop: '10px' }}>{configMessage}</p>}
       </section>
 
       {/* SECCIÓN 4: FORMULARIO DE PRODUCTOS */}
@@ -654,16 +698,52 @@ console.log('Categorías que se van a guardar:', categories)
             />
           </label>
 
-          <label>
-            Ruta o URL de la imagen
-            <input
-              name="image"
-              value={form.image}
-              onChange={handleChange}
-              placeholder="/images/perfume.jpg"
-              required
-            />
-          </label>
+          <div className="admin-image-field">
+            <label>
+              Imagen del perfume
+              <input
+                name="image"
+                value={form.image}
+                onChange={handleChange}
+                placeholder="Sube una foto o pega una URL / ruta (/images/perfume.jpg)"
+                required
+              />
+            </label>
+
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+              <label
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  border: '1px solid #e5c77e',
+                  color: '#e5c77e',
+                  padding: '8px 16px',
+                  borderRadius: '6px',
+                  cursor: subiendoImagen ? 'wait' : 'pointer',
+                  fontSize: '0.9rem',
+                  opacity: subiendoImagen ? 0.6 : 1,
+                }}
+              >
+                {subiendoImagen ? 'Subiendo...' : '📷 Subir foto desde el equipo'}
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/avif,image/gif"
+                  onChange={handleImageUpload}
+                  disabled={subiendoImagen}
+                  style={{ display: 'none' }}
+                />
+              </label>
+
+              {form.image && (
+                <img
+                  src={form.image}
+                  alt="Vista previa"
+                  style={{ width: '64px', height: '64px', objectFit: 'cover', borderRadius: '6px', border: '1px solid #333' }}
+                />
+              )}
+            </div>
+          </div>
 
           <div className="admin-description-field">
             <label>Descripción del perfume</label>
@@ -774,4 +854,4 @@ console.log('Categorías que se van a guardar:', categories)
   )
 }
 
-export default Admin
+export default Admin

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useCarrito } from '../context/CarritoContext'
-import { getStoreConfig } from '../data/products'
+import { getStoreConfig, loadStoreConfig, subscribeToStoreConfig } from '../data/products'
 import intlTelInput from 'intl-tel-input'
 import 'intl-tel-input/dist/css/intlTelInput.css'
 import './Checkout.css'
@@ -36,7 +36,8 @@ function Checkout() {
   const [revisar, setRevisar] = useState(false)
   const [errorTelefono, setErrorTelefono] = useState('')
   const [cargandoPago, setCargandoPago] = useState(false)
-  
+  const [errorPago, setErrorPago] = useState('')
+
   // MODALES
   const [mostrarModalPago, setMostrarModalPago] = useState(false)
   const [mostrarProcesandoMercadoPago, setMostrarProcesandoMercadoPago] = useState(false)
@@ -46,7 +47,15 @@ function Checkout() {
       setConfig(getStoreConfig())
     }
     window.addEventListener('imperium-config-updated', actualizarConfig)
-    return () => window.removeEventListener('imperium-config-updated', actualizarConfig)
+
+    // Trae las tarifas de envío actuales y escucha cambios del administrador
+    loadStoreConfig()
+    const cancelarSuscripcion = subscribeToStoreConfig()
+
+    return () => {
+      window.removeEventListener('imperium-config-updated', actualizarConfig)
+      cancelarSuscripcion()
+    }
   }, [])
 
   useEffect(() => {
@@ -149,10 +158,14 @@ function Checkout() {
     setMostrarModalPago(false)
     setMostrarProcesandoMercadoPago(true)
     setCargandoPago(true)
+    setErrorPago('')
 
     try {
+      // El servidor recalcula precios, stock y envío con los datos reales de la tienda.
+      // Aquí solo importan el id y la cantidad de cada producto.
       const itemsCheckout = [
         ...items.map((item) => ({
+          id: item.id,
           title: item.name,
           unit_price: Number(item.price),
           quantity: Number(item.cantidad),
@@ -171,6 +184,7 @@ function Checkout() {
 
       const ordenData = {
         items: itemsCheckout,
+        zoneName: zonaActual.name,
         payer: {
           name: datos.nombre,
           email: datos.correo,
@@ -191,15 +205,19 @@ function Checkout() {
         body: JSON.stringify(ordenData),
       })
 
-      if (respuesta.ok) {
-        const data = await respuesta.json()
-        if (data.init_point) {
-          window.location.href = data.init_point
-          return
-        }
+      const data = await respuesta.json().catch(() => ({}))
+
+      if (respuesta.ok && data.init_point) {
+        window.location.href = data.init_point
+        return
       }
+
+      setErrorPago(data.error || 'No se pudo conectar con Mercado Pago. Intenta de nuevo o usa WhatsApp.')
     } catch (error) {
       console.error(error)
+      setErrorPago('No se pudo conectar con Mercado Pago. Intenta de nuevo o usa WhatsApp.')
+    } finally {
+      setCargandoPago(false)
     }
   }
 
@@ -532,8 +550,16 @@ function Checkout() {
 
             <div className="checkout-modal-icono">🔒</div>
             <h2>Mercado Pago Checkout</h2>
-            <p style={{ color: '#e5c77e', fontWeight: 'bold' }}>Conectando con la pasarela de pagos segura...</p>
-            <p>Se está procesando la transacción por valor de <strong>{formatoPrecio(totalFinal)}</strong>.</p>
+            {errorPago ? (
+              <p className="checkout-error" style={{ fontWeight: 'bold' }}>{errorPago}</p>
+            ) : (
+              <>
+                <p style={{ color: '#e5c77e', fontWeight: 'bold' }}>
+                  {cargandoPago ? 'Conectando con la pasarela de pagos segura...' : 'Redirigiendo a Mercado Pago...'}
+                </p>
+                <p>Se está procesando la transacción por valor de <strong>{formatoPrecio(totalFinal)}</strong>.</p>
+              </>
+            )}
             
             <div style={{ margin: '20px 0', fontSize: '0.9rem', color: '#aaaaaa' }}>
               <p>✓ Cifrado SSL de 256 bits</p>

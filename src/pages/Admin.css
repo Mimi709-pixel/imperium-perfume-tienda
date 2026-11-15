@@ -726,3 +726,16 @@
     max-width: 100%;
   }
 }
+/* Campo de imagen con botón para subir foto */
+.admin-image-field {
+  min-width: 0;
+}
+
+.admin-image-field > label:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  color: #e8e0d0;
+  font-size: 13px;
+  font-weight: 600;
+}

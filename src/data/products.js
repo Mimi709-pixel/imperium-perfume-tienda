@@ -1,7 +1,11 @@
 
 import { supabase } from '../services/supabase'
+import { DEFAULT_STORE_CONFIG, mergeStoreConfig } from './defaultConfig'
 
 const CONFIG_KEY = 'imperium-store-config'
+// Copia local de los productos que usa el carrito para validar stock y precios
+const PRODUCTS_CACHE_KEY = 'imperium-products'
+const IMAGES_BUCKET = 'product-images'
 
 const initialProducts = [
   {
@@ -58,33 +62,18 @@ const initialProducts = [
   },
 ]
 
-const defaultConfig = {
-  freeShippingThreshold: 200000,
-  enableFreeShipping: true,
-  shippingNotice: 'Selecciona tu sector para calcular la tarifa exacta de entrega.',
-  zones: [
-    { name: 'Bosa / Porvenir', price: 15000 },
-    { name: 'Chapinero / Central', price: 30000 },
-    { name: 'Kennedy / Fontibón', price: 15000 },
-    { name: 'Suba / Usaquén', price: 20000 },
-    { name: 'Otras zonas de Bogotá', price: 18000 },
-  ],
-  announcementBar: {
-    enabled: true,
-    text: '✨ ENVÍOS GRATIS A BOGOTÁ POR COMPRAS SUPERIORES A $200.000 COP ✨',
-  },
-  whatsappSupport: {
-    phone: '573000000000',
-    message: 'Hola Imperium Perfume Gallery, quisiera recibir información sobre...',
-  },
-  coupons: [
-    { code: 'IMPERIUM10', discountType: 'percentage', discountValue: 10, active: true },
-    { code: 'BIENVENIDA20k', discountType: 'fixed', discountValue: 20000, active: true },
-  ],
-}
+const defaultConfig = DEFAULT_STORE_CONFIG
 
 // Productos iniciales de respaldo
 let cachedProducts = [...initialProducts]
+
+function guardarCacheProductos(productos) {
+  try {
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(productos))
+  } catch {
+    // Si el navegador no permite guardar, la tienda sigue funcionando
+  }
+}
 
 // Obtener productos desde Supabase
 export async function getProducts() {
@@ -101,11 +90,14 @@ export async function getProducts() {
         id: String(p.id),
         originalPrice: p.original_price ?? p.originalPrice ?? 0,
         promoBadge: p.promo_badge ?? p.promoBadge ?? '',
+        available: p.available ?? true,
+        featured: p.featured ?? false,
         categories: Array.isArray(p.categories)
           ? p.categories
           : (p.category ? [p.category] : []),
       }))
 
+      guardarCacheProductos(cachedProducts)
       return cachedProducts
     }
 
@@ -141,6 +133,11 @@ export async function saveProducts(productsList) {
         category: categories[0] || prod.category || '',
         categories,
         price: Number(prod.price) || 0,
+        // Estos campos antes no se enviaban y se perdían al guardar
+        original_price: Number(prod.originalPrice) || 0,
+        promo_badge: prod.promoBadge || '',
+        available: prod.available ?? true,
+        featured: prod.featured ?? false,
         stock: Number(prod.stock) || 0,
         image: prod.image || null,
         description: prod.description || '',
@@ -174,6 +171,7 @@ export async function saveProducts(productsList) {
     }
 
     cachedProducts = productsList
+    guardarCacheProductos(cachedProducts)
 
     window.dispatchEvent(new Event('imperium-products-updated'))
 
@@ -184,41 +182,157 @@ export async function saveProducts(productsList) {
   }
 }
 
-// Obtener configuración de la tienda
-export function getStoreConfig() {
+// ---------------------------------------------------------------
+// CONFIGURACIÓN DE LA TIENDA
+// Se guarda en Supabase (tabla store_config) para que los cambios del
+// admin le lleguen a todos los clientes al instante.
+// En el navegador se guarda una copia para mostrarla mientras carga.
+// ---------------------------------------------------------------
+
+function leerConfigLocal() {
   try {
     const saved = localStorage.getItem(CONFIG_KEY)
-
-    if (!saved) return defaultConfig
-
-    const parsed = JSON.parse(saved)
-
-    return {
-      ...defaultConfig,
-      ...parsed,
-      zones: Array.isArray(parsed.zones)
-        ? parsed.zones
-        : defaultConfig.zones,
-      coupons: Array.isArray(parsed.coupons)
-        ? parsed.coupons
-        : defaultConfig.coupons,
-    }
-  } catch (error) {
-    console.error('Error al cargar la configuración:', error)
-    return defaultConfig
+    return saved ? JSON.parse(saved) : null
+  } catch {
+    return null
   }
 }
 
-// Guardar configuración de la tienda
-export function saveStoreConfig(config) {
+function guardarConfigLocal(config) {
   try {
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config))
+  } catch {
+    // Sin almacenamiento local la tienda sigue funcionando
+  }
+}
+
+let cachedConfig = mergeStoreConfig(leerConfigLocal() || defaultConfig)
+
+// Obtener configuración de la tienda (respuesta inmediata con la última copia conocida)
+export function getStoreConfig() {
+  return cachedConfig
+}
+
+// Descargar la configuración actual desde Supabase
+export async function loadStoreConfig() {
+  try {
+    const { data, error } = await supabase
+      .from('store_config')
+      .select('data')
+      .eq('id', 'main')
+      .maybeSingle()
+
+    if (error) throw error
+
+    const remota = data?.data
+
+    // Si en Supabase todavía no hay configuración guardada se conserva la copia local.
+    // Así el administrador no pierde lo que había configurado antes en su navegador.
+    if (remota && Object.keys(remota).length > 0) {
+      cachedConfig = mergeStoreConfig(remota)
+      guardarConfigLocal(cachedConfig)
+      window.dispatchEvent(new Event('imperium-config-updated'))
+    }
+  } catch (error) {
+    console.error('Error al cargar la configuración de la tienda:', error)
+  }
+
+  return cachedConfig
+}
+
+// Guardar configuración de la tienda en Supabase
+export async function saveStoreConfig(config) {
+  try {
+    const limpia = mergeStoreConfig(config)
+
+    const { error } = await supabase
+      .from('store_config')
+      .upsert({ id: 'main', data: limpia, updated_at: new Date().toISOString() })
+
+    if (error) throw error
+
+    cachedConfig = limpia
+    guardarConfigLocal(limpia)
     window.dispatchEvent(new Event('imperium-config-updated'))
     return true
   } catch (error) {
     console.error('Error al guardar la configuración:', error)
     return false
   }
+}
+
+// Escuchar cambios de configuración en tiempo real
+export function subscribeToStoreConfig(callback) {
+  const channel = supabase
+    .channel(`imperium-config-realtime-${Math.random().toString(36).slice(2)}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'store_config' },
+      async () => {
+        const config = await loadStoreConfig()
+        callback?.(config)
+      }
+    )
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
+// ---------------------------------------------------------------
+// IMÁGENES DE PRODUCTOS
+// Se suben a Supabase Storage y quedan con una URL pública.
+// Las imágenes viejas en /images siguen funcionando igual.
+// ---------------------------------------------------------------
+
+const TIPOS_IMAGEN = ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif']
+const TAMANO_MAXIMO_MB = 5
+
+export async function uploadProductImage(file) {
+  if (!file) {
+    return { ok: false, mensaje: 'Selecciona una imagen.' }
+  }
+
+  if (!TIPOS_IMAGEN.includes(file.type)) {
+    return { ok: false, mensaje: 'Formato no permitido. Usa JPG, PNG, WEBP o AVIF.' }
+  }
+
+  if (file.size > TAMANO_MAXIMO_MB * 1024 * 1024) {
+    return { ok: false, mensaje: `La imagen pesa más de ${TAMANO_MAXIMO_MB} MB.` }
+  }
+
+  const extension = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const nombreBase = file.name
+    .replace(/\.[^.]+$/, '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'perfume'
+
+  const ruta = `productos/${Date.now()}-${nombreBase}.${extension}`
+
+  try {
+    const { error } = await supabase.storage
+      .from(IMAGES_BUCKET)
+      .upload(ruta, file, { cacheControl: '31536000', upsert: false, contentType: file.type })
+
+    if (error) throw error
+
+    const { data } = supabase.storage.from(IMAGES_BUCKET).getPublicUrl(ruta)
+
+    return { ok: true, url: data.publicUrl }
+  } catch (error) {
+    console.error('Error al subir la imagen:', error)
+    return { ok: false, mensaje: 'No se pudo subir la imagen. Revisa tu sesión e intenta de nuevo.' }
+  }
+}
+
+// Cargar la configuración apenas abre la tienda
+if (typeof window !== 'undefined') {
+  loadStoreConfig()
 }
 
 // Escuchar cambios de productos en tiempo real desde Supabase

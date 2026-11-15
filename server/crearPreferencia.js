@@ -1,0 +1,185 @@
+// Lógica compartida para crear el pago en Mercado Pago.
+// Funciona igual en Vercel (api/) y en Cloudflare Pages (functions/).
+//
+// Seguridad:
+// - El token secreto de Mercado Pago se lee de la variable de entorno MP_ACCESS_TOKEN.
+// - Los precios, el stock y el envío se calculan aquí con los datos de Supabase.
+//   Lo que manda el navegador solo se usa para saber qué productos y cuántos.
+
+import { mergeStoreConfig } from '../src/data/defaultConfig.js'
+
+const MAX_UNIDADES_POR_PRODUCTO = 50
+
+function respuesta(status, json) {
+  return { status, json }
+}
+
+function leerEnv(env) {
+  return {
+    mpToken: env.MP_ACCESS_TOKEN,
+    supabaseUrl: env.SUPABASE_URL || env.VITE_SUPABASE_URL,
+    supabaseKey: env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY,
+  }
+}
+
+async function consultarSupabase(supabaseUrl, supabaseKey, ruta) {
+  const res = await fetch(`${supabaseUrl}/rest/v1/${ruta}`, {
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+    },
+  })
+
+  if (!res.ok) {
+    throw new Error(`Supabase respondió ${res.status}`)
+  }
+
+  return res.json()
+}
+
+export async function crearPreferencia({ body, origin, env }) {
+  const { mpToken, supabaseUrl, supabaseKey } = leerEnv(env || {})
+
+  if (!mpToken || !supabaseUrl || !supabaseKey) {
+    console.error('Faltan variables de entorno: MP_ACCESS_TOKEN, SUPABASE_URL o SUPABASE_ANON_KEY')
+    return respuesta(500, { error: 'El pago en línea no está configurado. Usa la opción de WhatsApp.' })
+  }
+
+  // 1. Productos solicitados por el cliente: solo id y cantidad
+  const itemsEntrada = Array.isArray(body?.items) ? body.items : []
+  const solicitados = new Map()
+
+  for (const item of itemsEntrada) {
+    const id = item?.id ?? item?.productId
+    const cantidad = Number(item?.quantity)
+
+    // El envío ya no se acepta desde el navegador, se calcula aquí
+    if (id === undefined || id === null || id === '') continue
+
+    if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > MAX_UNIDADES_POR_PRODUCTO) {
+      return respuesta(400, { error: 'Cantidad no válida en el carrito.' })
+    }
+
+    const clave = String(id)
+    solicitados.set(clave, (solicitados.get(clave) || 0) + cantidad)
+  }
+
+  if (solicitados.size === 0) {
+    return respuesta(400, { error: 'El carrito está vacío.' })
+  }
+
+  // 2. Precios y stock reales desde Supabase
+  const ids = [...solicitados.keys()].map((id) => `"${id.replace(/"/g, '')}"`).join(',')
+
+  let productos
+  let configGuardada
+
+  try {
+    productos = await consultarSupabase(
+      supabaseUrl,
+      supabaseKey,
+      `products?select=*&id=in.(${encodeURIComponent(ids)})`
+    )
+
+    const filasConfig = await consultarSupabase(
+      supabaseUrl,
+      supabaseKey,
+      'store_config?select=data&id=eq.main'
+    ).catch(() => [])
+
+    configGuardada = filasConfig?.[0]?.data
+  } catch (error) {
+    console.error('Error leyendo Supabase:', error)
+    return respuesta(502, { error: 'No se pudo verificar el inventario. Intenta de nuevo.' })
+  }
+
+  const productosPorId = new Map((productos || []).map((p) => [String(p.id), p]))
+  const itemsPago = []
+  let subtotal = 0
+
+  for (const [id, cantidad] of solicitados) {
+    const producto = productosPorId.get(id)
+
+    if (!producto || producto.available === false) {
+      return respuesta(409, { error: 'Un producto de tu carrito ya no está disponible.' })
+    }
+
+    const stock = Number(producto.stock) || 0
+    if (cantidad > stock) {
+      return respuesta(409, { error: `Solo hay ${stock} unidades de ${producto.name}.` })
+    }
+
+    const precio = Number(producto.price) || 0
+    if (precio <= 0) {
+      return respuesta(409, { error: `El producto ${producto.name} no tiene precio válido.` })
+    }
+
+    subtotal += precio * cantidad
+    itemsPago.push({
+      id,
+      title: String(producto.name || 'Perfume').slice(0, 250),
+      unit_price: precio,
+      quantity: cantidad,
+      currency_id: 'COP',
+    })
+  }
+
+  // 3. Envío calculado con la configuración de la tienda
+  const config = mergeStoreConfig(configGuardada)
+  const zonas = config.zones.length > 0 ? config.zones : [{ name: 'Bogotá Estándar', price: 15000 }]
+  const zona = zonas.find((z) => z.name === body?.zoneName) || zonas[0]
+  const envioGratis = config.enableFreeShipping && subtotal >= Number(config.freeShippingThreshold)
+  const costoEnvio = envioGratis ? 0 : Number(zona.price) || 0
+
+  if (costoEnvio > 0) {
+    itemsPago.push({
+      id: 'envio',
+      title: `Envío a domicilio (${zona.name})`,
+      unit_price: costoEnvio,
+      quantity: 1,
+      currency_id: 'COP',
+    })
+  }
+
+  // 4. Crear la preferencia en Mercado Pago
+  const payer = body?.payer || {}
+  const base = origin || ''
+
+  try {
+    const res = await fetch('https://api.mercadopago.com/checkout/preferences', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${mpToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        items: itemsPago,
+        payer: {
+          name: payer.name,
+          email: payer.email,
+          phone: payer.phone,
+          address: payer.address,
+        },
+        back_urls: {
+          success: `${base}/?status=success`,
+          failure: `${base}/checkout?status=failure`,
+          pending: `${base}/checkout?status=pending`,
+        },
+        auto_return: 'approved',
+        statement_descriptor: 'IMPERIUM PERFUMES',
+      }),
+    })
+
+    const data = await res.json()
+
+    if (!res.ok) {
+      console.error('Mercado Pago rechazó la preferencia:', data)
+      return respuesta(502, { error: 'Mercado Pago no pudo crear el pago. Intenta de nuevo.' })
+    }
+
+    return respuesta(200, { id: data.id, init_point: data.init_point })
+  } catch (error) {
+    console.error('Error al procesar con Mercado Pago:', error)
+    return respuesta(500, { error: 'Error al crear la preferencia de pago.' })
+  }
+}
