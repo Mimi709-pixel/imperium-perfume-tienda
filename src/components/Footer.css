@@ -172,3 +172,13 @@
   font-size: 0.78rem;
   color: #666666;
 }
+/* Enlace de WhatsApp configurable desde el admin */
+.footer-whatsapp {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.footer-whatsapp:hover {
+  color: #e5c77e;
+}

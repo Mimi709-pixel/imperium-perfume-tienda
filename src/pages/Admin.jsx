@@ -11,6 +11,7 @@ import {
   uploadProductImage,
 } from '../data/products'
 import { supabase } from '../services/supabase'
+import { cambiarPassword, correoSesion } from '../services/adminAuth'
 import 'react-quill-new/dist/quill.snow.css'
 import './Admin.css'
 
@@ -79,6 +80,37 @@ function Admin() {
   const [subiendoImagen, setSubiendoImagen] = useState(false)
   const [guardandoConfig, setGuardandoConfig] = useState(false)
   const [configSeccion, setConfigSeccion] = useState('envios')
+
+  // Seguridad de la cuenta
+  const [correoAdmin, setCorreoAdmin] = useState('')
+  const [nuevaPassword, setNuevaPassword] = useState({ nueva: '', confirmacion: '' })
+  const [mensajePassword, setMensajePassword] = useState({ texto: '', error: false })
+  const [guardandoPassword, setGuardandoPassword] = useState(false)
+
+  useEffect(() => {
+    correoSesion().then(setCorreoAdmin)
+  }, [])
+
+  async function handleCambiarPassword(event) {
+    event.preventDefault()
+    setMensajePassword({ texto: '', error: false })
+
+    if (nuevaPassword.nueva !== nuevaPassword.confirmacion) {
+      setMensajePassword({ texto: 'Las contraseñas no coinciden.', error: true })
+      return
+    }
+
+    setGuardandoPassword(true)
+    const resultado = await cambiarPassword(nuevaPassword.nueva)
+    setGuardandoPassword(false)
+
+    if (resultado.ok) {
+      setNuevaPassword({ nueva: '', confirmacion: '' })
+      setMensajePassword({ texto: 'Contraseña actualizada. Úsala la próxima vez que inicies sesión.', error: false })
+    } else {
+      setMensajePassword({ texto: resultado.mensaje, error: true })
+    }
+  }
 
   const [nuevaZona, setNuevaZona] = useState({ name: '', price: '' })
   const [nuevoCupon, setNuevoCupon] = useState({ code: '', discountType: 'percentage', discountValue: '' })
@@ -849,6 +881,56 @@ console.log('Categorías que se van a guardar:', categories)
             </article>
           ))}
         </div>
+      </section>
+
+      {/* SECCIÓN 6: SEGURIDAD DE LA CUENTA */}
+      <section className="admin-section">
+        <h2>Seguridad de la cuenta</h2>
+        {correoAdmin && (
+          <p style={{ color: '#b9b3a7', marginTop: '6px' }}>
+            Sesión iniciada como <strong style={{ color: '#e5c77e' }}>{correoAdmin}</strong>
+          </p>
+        )}
+
+        <form className="admin-form" onSubmit={handleCambiarPassword} style={{ marginTop: '16px' }}>
+          <label>
+            Nueva contraseña
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={nuevaPassword.nueva}
+              onChange={(event) => setNuevaPassword((prev) => ({ ...prev, nueva: event.target.value }))}
+              placeholder="Mínimo 8 caracteres"
+              minLength={8}
+              required
+            />
+          </label>
+
+          <label>
+            Repite la nueva contraseña
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={nuevaPassword.confirmacion}
+              onChange={(event) => setNuevaPassword((prev) => ({ ...prev, confirmacion: event.target.value }))}
+              placeholder="Escríbela de nuevo"
+              minLength={8}
+              required
+            />
+          </label>
+
+          <div className="admin-form-actions" style={{ gridColumn: '1 / -1' }}>
+            <button type="submit" disabled={guardandoPassword}>
+              {guardandoPassword ? 'Guardando...' : 'Cambiar contraseña'}
+            </button>
+          </div>
+        </form>
+
+        {mensajePassword.texto && (
+          <p role="status" style={{ color: mensajePassword.error ? '#ff6b6b' : '#e5c77e', marginTop: '10px' }}>
+            {mensajePassword.texto}
+          </p>
+        )}
       </section>
     </main>
   )

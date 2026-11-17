@@ -665,3 +665,95 @@
   font-size: 0.78rem;
   margin-top: 4px;
 }
+/* ================================
+   CUPÓN DE DESCUENTO
+================================ */
+
+.checkout-cupon {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 16px 0 6px;
+  color: #d6d0c5;
+  font-size: 12px;
+}
+
+.checkout-cupon-fila {
+  display: flex;
+  gap: 8px;
+}
+
+.checkout-cupon-fila input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 12px;
+  border: 1px solid #39352e;
+  border-radius: 2px;
+  outline: none;
+  background: #101010;
+  color: #f4f0e8;
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  transition: border-color 0.2s ease;
+}
+
+.checkout-cupon-fila input::placeholder {
+  color: #777168;
+  letter-spacing: 1.5px;
+}
+
+.checkout-cupon-fila input:focus {
+  border-color: #c9a96e;
+}
+
+.checkout-cupon-fila button {
+  padding: 0 18px;
+  border: 1px solid #c9a96e;
+  border-radius: 2px;
+  background: transparent;
+  color: #c9a96e;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.checkout-cupon-fila button:hover {
+  background: #c9a96e;
+  color: #17130d;
+}
+
+.checkout-cupon-mensaje {
+  margin: 6px 0 0;
+  color: #c9a96e;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.checkout-cupon-mensaje.error {
+  color: #e08a7a;
+}
+
+.checkout-descuento span:last-child {
+  color: #c9a96e;
+}
+
+.checkout-cupon-quitar {
+  margin-left: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #8f887c;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+  text-decoration: underline;
+}
+
+.checkout-cupon-quitar:hover {
+  color: #c9a96e;
+}

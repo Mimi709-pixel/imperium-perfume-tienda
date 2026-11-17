@@ -1,9 +1,31 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { getStoreConfig } from '../data/products'
+import { formatoWhatsApp, numeroWhatsApp } from '../data/reglasTienda'
 import './Footer.css'
+
+// Formato como estaba antes en el footer: $200.000
+function formatoPrecio(valor) {
+  return `$${Number(valor || 0).toLocaleString('es-CO', { maximumFractionDigits: 0 })}`
+}
 
 function Footer() {
   const [email, setEmail] = useState('')
   const [suscrito, setSuscrito] = useState(false)
+  const [config, setConfig] = useState(() => getStoreConfig())
+
+  // El WhatsApp y el envío gratis salen de la configuración del admin
+  useEffect(() => {
+    function actualizarConfig() {
+      setConfig(getStoreConfig())
+    }
+
+    window.addEventListener('imperium-config-updated', actualizarConfig)
+    return () => window.removeEventListener('imperium-config-updated', actualizarConfig)
+  }, [])
+
+  const numeroWA = numeroWhatsApp(config)
+  const mensajeWA = config.whatsappSupport?.message || ''
+  const enlaceWA = `https://wa.me/${numeroWA}${mensajeWA ? `?text=${encodeURIComponent(mensajeWA)}` : ''}`
 
   function handleSuscripcion(e) {
     e.preventDefault()
@@ -20,8 +42,17 @@ function Footer() {
       <div className="footer-beneficios">
         <div className="footer-beneficio-card">
           <span className="footer-icono">🚚</span>
-          <h3>Envíos gratis</h3>
-          <p>En Bogotá por compras superiores a $200.000 COP</p>
+          {config.enableFreeShipping ? (
+            <>
+              <h3>Envíos gratis</h3>
+              <p>En Bogotá por compras superiores a {formatoPrecio(config.freeShippingThreshold)} COP</p>
+            </>
+          ) : (
+            <>
+              <h3>Envíos en Bogotá</h3>
+              <p>Tarifa según tu sector, calculada al finalizar la compra</p>
+            </>
+          )}
         </div>
 
         <div className="footer-beneficio-card">
@@ -51,7 +82,17 @@ function Footer() {
 
         <div className="footer-seccion">
           <h4>Contáctanos</h4>
-          <p><strong>WhatsApp:</strong> +57 305 3638769</p>
+          <p>
+            <strong>WhatsApp:</strong>{' '}
+            <a
+              href={enlaceWA}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="footer-whatsapp"
+            >
+              {formatoWhatsApp(numeroWA)}
+            </a>
+          </p>
           <p><strong>Ubicación:</strong> Bogotá D.C., Colombia</p>
           <p><strong>Horarios:</strong> Lunes a Sábado: 8:00 AM - 8:00 PM</p>
           

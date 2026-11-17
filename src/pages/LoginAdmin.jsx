@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { iniciarSesionAdmin } from '../services/adminAuth'
+import { enviarRecuperacion, iniciarSesionAdmin } from '../services/adminAuth'
 import './LoginAdmin.css'
 
 function LoginAdmin() {
@@ -8,6 +8,7 @@ function LoginAdmin() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [cargando, setCargando] = useState(false)
+  const [aviso, setAviso] = useState('')
   const navigate = useNavigate()
 
   async function handleLogin(e) {
@@ -21,6 +22,26 @@ function LoginAdmin() {
 
     if (resultado.ok) {
       navigate('/admin')
+    } else {
+      setError(resultado.mensaje)
+    }
+  }
+
+  async function handleRecuperar() {
+    setError('')
+    setAviso('')
+
+    if (!usuario.trim()) {
+      setError('Escribe tu correo arriba y vuelve a tocar ¿Olvidaste tu contraseña?')
+      return
+    }
+
+    setCargando(true)
+    const resultado = await enviarRecuperacion(usuario)
+    setCargando(false)
+
+    if (resultado.ok) {
+      setAviso('Si el correo está registrado, te llegará un enlace para crear una nueva contraseña. Revisa también la carpeta de spam.')
     } else {
       setError(resultado.mensaje)
     }
@@ -60,9 +81,14 @@ function LoginAdmin() {
           </label>
 
           {error && <div className="login-error">{error}</div>}
+          {aviso && <div className="login-aviso">{aviso}</div>}
 
           <button type="submit" className="login-boton" disabled={cargando}>
             {cargando ? 'Verificando...' : 'Ingresar al Panel'}
+          </button>
+
+          <button type="button" className="login-olvido" onClick={handleRecuperar} disabled={cargando}>
+            ¿Olvidaste tu contraseña?
           </button>
         </form>
       </div>

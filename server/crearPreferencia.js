@@ -7,6 +7,7 @@
 //   Lo que manda el navegador solo se usa para saber qué productos y cuántos.
 
 import { mergeStoreConfig } from '../src/data/defaultConfig.js'
+import { buscarCupon, calcularDescuento } from '../src/data/reglasTienda.js'
 
 const MAX_UNIDADES_POR_PRODUCTO = 50
 
@@ -160,8 +161,44 @@ export async function crearPreferencia({ body, origin, env }) {
     })
   }
 
-  // 3. Envío calculado con la configuración de la tienda
+  // 3. Cupón de descuento validado con la configuración real
   const config = mergeStoreConfig(configGuardada)
+  const codigoCupon = String(body?.couponCode || '').trim()
+  let descuento = 0
+  let cupon = null
+
+  if (codigoCupon) {
+    cupon = buscarCupon(config, codigoCupon)
+
+    if (!cupon) {
+      return respuesta(409, { error: 'El cupón ya no es válido. Quítalo e intenta de nuevo.' })
+    }
+
+    descuento = calcularDescuento(cupon, subtotal)
+  }
+
+  // Mercado Pago no acepta precios negativos: con cupón se cobra un solo
+  // ítem con el valor de los productos menos el descuento.
+  if (descuento > 0) {
+    const detalle = itemsPago.map((item) => `${item.title} x${item.quantity}`).join(', ')
+    const totalProductos = subtotal - descuento
+
+    if (totalProductos < 1) {
+      return respuesta(409, { error: 'Este cupón cubre todo el valor. Finaliza tu pedido por WhatsApp.' })
+    }
+
+    itemsPago.length = 0
+    itemsPago.push({
+      id: 'pedido',
+      title: `Pedido Imperium (cupón ${String(cupon.code).toUpperCase()})`.slice(0, 250),
+      description: detalle.slice(0, 250),
+      unit_price: totalProductos,
+      quantity: 1,
+      currency_id: 'COP',
+    })
+  }
+
+  // 4. Envío calculado con la configuración de la tienda
   const zonas = config.zones.length > 0 ? config.zones : [{ name: 'Bogotá Estándar', price: 15000 }]
   const zona = zonas.find((z) => z.name === body?.zoneName) || zonas[0]
   const envioGratis = config.enableFreeShipping && subtotal >= Number(config.freeShippingThreshold)
@@ -177,7 +214,7 @@ export async function crearPreferencia({ body, origin, env }) {
     })
   }
 
-  // 4. Crear la preferencia en Mercado Pago
+  // 5. Crear la preferencia en Mercado Pago
   const payer = body?.payer || {}
   const base = origin || ''
 

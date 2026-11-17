@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { getProducts } from '../data/products'
 import { useCarrito } from '../context/CarritoContext'
+import AnnouncementBar from './AnnouncementBar'
 import './Header.css'
 
 function Header() {
@@ -61,6 +62,8 @@ function Header() {
     : []
 
   return (
+    <>
+    <AnnouncementBar />
     <header className="header">
       <div className="navigation-bar">
         <nav className="nav">
@@ -186,6 +189,7 @@ function Header() {
         </div>
       )}
     </header>
+    </>
   )
 }
 

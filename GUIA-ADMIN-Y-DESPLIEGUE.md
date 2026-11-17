@@ -48,11 +48,34 @@ on conflict do nothing;
 Si por ahora te quedas en Vercel, configura las mismas tres variables en Vercel > Settings > Environment Variables.
 El código funciona en los dos.
 
+## Dar acceso a un administrador nuevo
+
+1. En Supabase > Authentication > URL Configuration:
+   - Site URL: `https://imperium-perfume-tienda.vercel.app/admin/activar`
+   - Redirect URLs: `https://imperium-perfume-tienda.vercel.app/**` y `http://localhost:5173/**`
+   Si cambias de dominio o pasas a Cloudflare, actualiza estas dos con la dirección nueva.
+2. Authentication > Users > Add user > Send invitation, con el correo de la persona.
+3. Dale el permiso en SQL Editor:
+
+```sql
+insert into public.admin_users (user_id)
+select id from auth.users where lower(email) = 'correo@ejemplo.com'
+on conflict do nothing;
+```
+
+4. A la persona le llega un correo. Al abrir el enlace crea su propia contraseña y entra al panel.
+
+Si alguien olvida su contraseña, en `/admin/login` escribe su correo y toca ¿Olvidaste tu contraseña?
+
 ## 4. Cómo usa el admin el cliente
 
 1. Entra a `/admin/login` con su correo y clave.
 2. Para un producto nuevo: llena los datos, toca Subir foto desde el equipo y luego Agregar producto.
 3. Envíos, cupones, barra de anuncios y WhatsApp se guardan con su botón y se publican al instante.
+   - La barra de anuncios aparece arriba del menú. Se apaga desmarcando la casilla.
+   - Los cupones se escriben en el checkout. Se validan también en el servidor de pagos.
+   - El WhatsApp configurado se usa en el checkout y en el footer.
+4. Al final del panel, Seguridad de la cuenta permite cambiar la contraseña.
 
 ## Orden recomendado
 

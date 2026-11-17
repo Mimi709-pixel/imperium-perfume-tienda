@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useCarrito } from '../context/CarritoContext'
 import { getStoreConfig, loadStoreConfig, subscribeToStoreConfig } from '../data/products'
+import { buscarCupon, calcularDescuento, describirCupon, numeroWhatsApp } from '../data/reglasTienda'
 import intlTelInput from 'intl-tel-input'
 import 'intl-tel-input/dist/css/intlTelInput.css'
 import './Checkout.css'
@@ -37,6 +38,11 @@ function Checkout() {
   const [errorTelefono, setErrorTelefono] = useState('')
   const [cargandoPago, setCargandoPago] = useState(false)
   const [errorPago, setErrorPago] = useState('')
+
+  // CUPÓN DE DESCUENTO
+  const [codigoCupon, setCodigoCupon] = useState('')
+  const [cuponAplicado, setCuponAplicado] = useState('')
+  const [mensajeCupon, setMensajeCupon] = useState({ texto: '', error: false })
 
   // MODALES
   const [mostrarModalPago, setMostrarModalPago] = useState(false)
@@ -97,7 +103,36 @@ function Checkout() {
   const zonaActual = zonasDisponibles[sectorSeleccionado] || zonasDisponibles[0]
   const esEnvioGratis = config.enableFreeShipping && total >= config.freeShippingThreshold
   const costoEnvioAplicado = esEnvioGratis ? 0 : Number(zonaActual.price || 0)
-  const totalFinal = total + costoEnvioAplicado
+
+  // El cupón se vuelve a validar con la configuración actual en cada render:
+  // si el admin lo desactiva, deja de aplicarse.
+  const cupon = cuponAplicado ? buscarCupon(config, cuponAplicado) : null
+  const descuento = calcularDescuento(cupon, total)
+  const totalFinal = Math.max(0, total - descuento) + costoEnvioAplicado
+
+  function aplicarCupon() {
+    const encontrado = buscarCupon(config, codigoCupon)
+
+    if (!codigoCupon.trim()) {
+      setMensajeCupon({ texto: 'Escribe un código de descuento.', error: true })
+      return
+    }
+
+    if (!encontrado) {
+      setCuponAplicado('')
+      setMensajeCupon({ texto: 'Este cupón no existe o ya no está activo.', error: true })
+      return
+    }
+
+    setCuponAplicado(encontrado.code)
+    setCodigoCupon('')
+    setMensajeCupon({ texto: `Cupón aplicado: ${describirCupon(encontrado)} de descuento.`, error: false })
+  }
+
+  function quitarCupon() {
+    setCuponAplicado('')
+    setMensajeCupon({ texto: '', error: false })
+  }
 
   function actualizarCampo(event) {
     const { name, value } = event.target
@@ -185,6 +220,7 @@ function Checkout() {
       const ordenData = {
         items: itemsCheckout,
         zoneName: zonaActual.name,
+        couponCode: cupon ? cupon.code : '',
         payer: {
           name: datos.nombre,
           email: datos.correo,
@@ -223,7 +259,7 @@ function Checkout() {
 
   // ENVÍO DE PEDIDO A WHATSAPP (CORREGIDO)
   function enviarPedidoWhatsApp() {
-    const numeroWA = '573053638769'
+    const numeroWA = numeroWhatsApp(config)
 
     const listaProductos = items.map(
       (item) => `• *${item.name} (x${item.cantidad})* - ${formatoPrecio(Number(item.price) * Number(item.cantidad))}`
@@ -238,6 +274,7 @@ function Checkout() {
       (datos.indicaciones ? `*Indicaciones:* ${datos.indicaciones}\n\n` : `\n`) +
       `*DETALLE DEL PEDIDO:*\n${listaProductos}\n\n` +
       `*Subtotal:* ${formatoPrecio(total)}\n` +
+      (descuento > 0 ? `*Cupón ${cupon.code.toUpperCase()}:* -${formatoPrecio(descuento)}\n` : '') +
       `*Envío:* ${esEnvioGratis ? '¡GRATIS!' : formatoPrecio(costoEnvioAplicado)}\n` +
       `*TOTAL A PAGAR:* ${formatoPrecio(totalFinal)}\n\n` +
       `Hola, quisiera confirmar mi pedido.`
@@ -466,6 +503,18 @@ function Checkout() {
             <span>{formatoPrecio(total)}</span>
           </div>
 
+          {descuento > 0 && (
+            <div className="checkout-resumen-linea checkout-descuento">
+              <span>
+                Cupón {cupon.code.toUpperCase()}
+                <button type="button" className="checkout-cupon-quitar" onClick={quitarCupon}>
+                  Quitar
+                </button>
+              </span>
+              <span>-{formatoPrecio(descuento)}</span>
+            </div>
+          )}
+
           <div className="checkout-resumen-linea">
             <span>Envío ({zonaActual.name})</span>
             {esEnvioGratis ? (
@@ -478,6 +527,40 @@ function Checkout() {
           {config.shippingNotice && (
             <p className="checkout-nota" style={{ fontSize: '12px', color: '#b9b3a7', marginTop: '6px' }}>
               * {config.shippingNotice}
+            </p>
+          )}
+
+          {!cupon && (
+            <div className="checkout-cupon">
+              <label htmlFor="checkout-cupon-input">¿Tienes un cupón de descuento?</label>
+              <div className="checkout-cupon-fila">
+                <input
+                  id="checkout-cupon-input"
+                  type="text"
+                  value={codigoCupon}
+                  onChange={(event) => {
+                    setCodigoCupon(event.target.value.toUpperCase())
+                    setMensajeCupon({ texto: '', error: false })
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      aplicarCupon()
+                    }
+                  }}
+                  placeholder="CÓDIGO"
+                  autoComplete="off"
+                />
+                <button type="button" onClick={aplicarCupon}>
+                  Aplicar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {mensajeCupon.texto && (mensajeCupon.error || cupon) && (
+            <p className={mensajeCupon.error ? 'checkout-cupon-mensaje error' : 'checkout-cupon-mensaje'} role="status">
+              {mensajeCupon.texto}
             </p>
           )}
 

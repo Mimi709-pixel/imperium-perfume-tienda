@@ -19,7 +19,7 @@ export const DEFAULT_STORE_CONFIG = {
     text: '✨ ENVÍOS GRATIS A BOGOTÁ POR COMPRAS SUPERIORES A $200.000 COP ✨',
   },
   whatsappSupport: {
-    phone: '573000000000',
+    phone: '573053638769',
     message: 'Hola Imperium Perfume Gallery, quisiera recibir información sobre...',
   },
   coupons: [
@@ -42,6 +42,18 @@ export function mergeStoreConfig(saved) {
     zones: Array.isArray(parsed.zones) ? parsed.zones : DEFAULT_STORE_CONFIG.zones,
     coupons: Array.isArray(parsed.coupons) ? parsed.coupons : DEFAULT_STORE_CONFIG.coupons,
     announcementBar: { ...DEFAULT_STORE_CONFIG.announcementBar, ...(parsed.announcementBar || {}) },
-    whatsappSupport: { ...DEFAULT_STORE_CONFIG.whatsappSupport, ...(parsed.whatsappSupport || {}) },
+    whatsappSupport: normalizarWhatsapp(parsed.whatsappSupport),
   }
+}
+
+// El número de ejemplo 573000000000 se reemplaza por el real de la tienda
+function normalizarWhatsapp(guardado) {
+  const whatsapp = { ...DEFAULT_STORE_CONFIG.whatsappSupport, ...(guardado || {}) }
+  const numero = String(whatsapp.phone || '').replace(/\D/g, '')
+
+  if (!numero || numero === '573000000000') {
+    whatsapp.phone = DEFAULT_STORE_CONFIG.whatsappSupport.phone
+  }
+
+  return whatsapp
 }

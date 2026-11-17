@@ -102,3 +102,36 @@
   background: #f0d99d;
   transform: translateY(-1px);
 }
+.login-aviso {
+  background: rgba(229, 199, 126, 0.08);
+  border: 1px solid rgba(229, 199, 126, 0.5);
+  color: #e5c77e;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.login-olvido {
+  align-self: center;
+  margin-top: 4px;
+  padding: 4px;
+  border: none;
+  background: none;
+  color: #a0a0a0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.82rem;
+  text-decoration: underline;
+  transition: color 0.2s ease;
+}
+
+.login-olvido:hover {
+  color: #e5c77e;
+}
+
+.login-olvido:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
