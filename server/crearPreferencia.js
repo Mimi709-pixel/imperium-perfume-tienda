@@ -14,34 +14,71 @@ function respuesta(status, json) {
   return { status, json }
 }
 
+// Datos públicos de Supabase (los mismos de src/services/supabase.js).
+// Se usan como respaldo si las variables del hosting faltan o están desactualizadas.
+const SUPABASE_PUBLICO = {
+  url: 'https://iznagxiqpsqvtdstkgkw.supabase.co',
+  key: 'sb_publishable_fuBJAQq_jQH5YdO8dvjvzA_9sccaUG3',
+}
+
 function leerEnv(env) {
+  // Conexiones a Supabase en orden de preferencia, sin repetir
+  const candidatas = [
+    { url: env.SUPABASE_URL, key: env.SUPABASE_ANON_KEY },
+    { url: env.VITE_SUPABASE_URL, key: env.VITE_SUPABASE_ANON_KEY },
+    SUPABASE_PUBLICO,
+  ]
+    .filter((c) => c.url && c.key)
+    .map((c) => ({ url: String(c.url).trim().replace(/\/+$/, ''), key: String(c.key).trim() }))
+    .filter((c, i, lista) => lista.findIndex((o) => o.url === c.url && o.key === c.key) === i)
+
   return {
-    mpToken: env.MP_ACCESS_TOKEN,
-    supabaseUrl: env.SUPABASE_URL || env.VITE_SUPABASE_URL,
-    supabaseKey: env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY,
+    mpToken: env.MP_ACCESS_TOKEN ? String(env.MP_ACCESS_TOKEN).trim() : '',
+    conexiones: candidatas,
   }
 }
 
-async function consultarSupabase(supabaseUrl, supabaseKey, ruta) {
-  const res = await fetch(`${supabaseUrl}/rest/v1/${ruta}`, {
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-    },
-  })
+async function consultarSupabase({ url, key }, ruta) {
+  const headers = { apikey: key }
+
+  // Las llaves antiguas (JWT) también se envían como Authorization.
+  // Las nuevas (sb_publishable_...) solo van en apikey.
+  if (!key.startsWith('sb_')) {
+    headers.Authorization = `Bearer ${key}`
+  }
+
+  const res = await fetch(`${url}/rest/v1/${ruta}`, { headers })
 
   if (!res.ok) {
-    throw new Error(`Supabase respondió ${res.status}`)
+    const detalle = await res.text().catch(() => '')
+    throw new Error(`Supabase respondió ${res.status}: ${detalle.slice(0, 200)}`)
   }
 
   return res.json()
 }
 
-export async function crearPreferencia({ body, origin, env }) {
-  const { mpToken, supabaseUrl, supabaseKey } = leerEnv(env || {})
+// Prueba cada conexión hasta que una funcione
+async function consultarConRespaldo(conexiones, ruta) {
+  let ultimoError
 
-  if (!mpToken || !supabaseUrl || !supabaseKey) {
-    console.error('Faltan variables de entorno: MP_ACCESS_TOKEN, SUPABASE_URL o SUPABASE_ANON_KEY')
+  for (const conexion of conexiones) {
+    try {
+      const datos = await consultarSupabase(conexion, ruta)
+      return { datos, conexion }
+    } catch (error) {
+      console.error(`Supabase falló con ${conexion.url}:`, error.message)
+      ultimoError = error
+    }
+  }
+
+  throw ultimoError || new Error('No hay conexión a Supabase configurada')
+}
+
+export async function crearPreferencia({ body, origin, env }) {
+  const { mpToken, conexiones } = leerEnv(env || {})
+
+  if (!mpToken) {
+    console.error('Falta la variable de entorno MP_ACCESS_TOKEN')
     return respuesta(500, { error: 'El pago en línea no está configurado. Usa la opción de WhatsApp.' })
   }
 
@@ -75,15 +112,14 @@ export async function crearPreferencia({ body, origin, env }) {
   let configGuardada
 
   try {
-    productos = await consultarSupabase(
-      supabaseUrl,
-      supabaseKey,
+    const resultado = await consultarConRespaldo(
+      conexiones,
       `products?select=*&id=in.(${encodeURIComponent(ids)})`
     )
+    productos = resultado.datos
 
     const filasConfig = await consultarSupabase(
-      supabaseUrl,
-      supabaseKey,
+      resultado.conexion,
       'store_config?select=data&id=eq.main'
     ).catch(() => [])
 
